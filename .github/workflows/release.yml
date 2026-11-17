@@ -11,12 +11,14 @@ permissions:
 jobs:
   release:
     name: build and publish
-    runs-on: macos-14
+    # GitHub-hosted macOS runner labels get retired (macos-14 is already
+    # unsupported) and the arm64 pool can cancel jobs under capacity pressure.
+    # The CLI is pure Go and cross-compiles with CGO disabled, so build the
+    # darwin binaries on a Linux runner for a reliable release.
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -24,10 +26,12 @@ jobs:
           go-version-file: go.mod
           cache: false
 
-      - name: Test
-        run: go test ./...
+      - name: Vet and test
+        run: |
+          go vet ./...
+          go test ./...
 
-      - name: Build archives
+      - name: Build darwin archives
         env:
           TAG: ${{ github.ref_name }}
         run: |
@@ -45,7 +49,7 @@ jobs:
             tar -czf "dist/${name}.tar.gz" -C dist "${name}"
             rm -rf "${out}"
           done
-          (cd dist && shasum -a 256 ./*.tar.gz > checksums.txt)
+          (cd dist && sha256sum ./*.tar.gz > checksums.txt)
           ls -lh dist
 
       - name: Publish release
