@@ -1,0 +1,56 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: build and publish
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Test
+        run: go test ./...
+
+      - name: Build archives
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          mkdir -p dist
+          for arch in arm64 amd64; do
+            name="proxy-antigravity_${version}_darwin_${arch}"
+            out="dist/${name}"
+            mkdir -p "${out}"
+            CGO_ENABLED=0 GOOS=darwin GOARCH="${arch}" \
+              go build -trimpath -ldflags "-s -w -X main.version=${version}" \
+              -o "${out}/proxy-antigravity" .
+            cp README.md README.zh-CN.md LICENSE "${out}/"
+            tar -czf "dist/${name}.tar.gz" -C dist "${name}"
+            rm -rf "${out}"
+          done
+          (cd dist && shasum -a 256 ./*.tar.gz > checksums.txt)
+          ls -lh dist
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          fail_on_unmatched_files: true
